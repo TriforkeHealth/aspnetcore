@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
@@ -2276,7 +2277,76 @@ public class UserManager<TUser> : IDisposable where TUser : class
     /// </summary>
     /// <returns></returns>
     protected virtual string CreateTwoFactorRecoveryCode()
-        => Guid.NewGuid().ToString().Substring(0, 8);
+    {
+#if NET6_0_OR_GREATER
+        return string.Create(11, 0, static (buffer, _) =>
+        {
+            buffer[10] = GetRandomRecoveryCodeChar();
+            buffer[9] = GetRandomRecoveryCodeChar();
+            buffer[8] = GetRandomRecoveryCodeChar();
+            buffer[7] = GetRandomRecoveryCodeChar();
+            buffer[6] = GetRandomRecoveryCodeChar();
+            buffer[5] = '-';
+            buffer[4] = GetRandomRecoveryCodeChar();
+            buffer[3] = GetRandomRecoveryCodeChar();
+            buffer[2] = GetRandomRecoveryCodeChar();
+            buffer[1] = GetRandomRecoveryCodeChar();
+            buffer[0] = GetRandomRecoveryCodeChar();
+        });
+#else
+        var recoveryCode = new StringBuilder(11);
+        recoveryCode.Append(GetRandomRecoveryCodeChar());
+        recoveryCode.Append(GetRandomRecoveryCodeChar());
+        recoveryCode.Append(GetRandomRecoveryCodeChar());
+        recoveryCode.Append(GetRandomRecoveryCodeChar());
+        recoveryCode.Append(GetRandomRecoveryCodeChar());
+        recoveryCode.Append('-');
+        recoveryCode.Append(GetRandomRecoveryCodeChar());
+        recoveryCode.Append(GetRandomRecoveryCodeChar());
+        recoveryCode.Append(GetRandomRecoveryCodeChar());
+        recoveryCode.Append(GetRandomRecoveryCodeChar());
+        recoveryCode.Append(GetRandomRecoveryCodeChar());
+        return recoveryCode.ToString();
+#endif
+    }
+
+    // We don't want to use any confusing characters like 0/O 1/I/L/l
+    // Taken from windows valid product key source
+    private static readonly char[] AllowedChars = "23456789BCDFGHJKMNPQRTVWXY".ToCharArray();
+    private static char GetRandomRecoveryCodeChar()
+    {
+        // Based on RandomNumberGenerator implementation of GetInt32
+        uint range = (uint)AllowedChars.Length - 1;
+
+        // Create a mask for the bits that we care about for the range. The other bits will be
+        // masked away.
+        uint mask = range;
+        mask |= mask >> 1;
+        mask |= mask >> 2;
+        mask |= mask >> 4;
+        mask |= mask >> 8;
+        mask |= mask >> 16;
+
+#if NETCOREAPP
+        Span<uint> resultBuffer = stackalloc uint[1];
+#else
+        var resultBuffer = new byte[1];
+#endif
+        uint result;
+
+        do
+        {
+#if NETCOREAPP
+            RandomNumberGenerator.Fill(MemoryMarshal.AsBytes(resultBuffer));
+#else
+            _rng.GetBytes(resultBuffer);
+#endif
+            result = mask & resultBuffer[0];
+        }
+        while (result > range);
+
+        return AllowedChars[(int)result];
+    }
 
     /// <summary>
     /// Returns whether a recovery code is valid for a user. Note: recovery codes are only valid
@@ -2434,13 +2504,13 @@ public class UserManager<TUser> : IDisposable where TUser : class
 
     private static string NewSecurityStamp()
     {
-        byte[] bytes = new byte[20];
 #if NETSTANDARD2_0 || NETFRAMEWORK
+        byte[] bytes = new byte[20];
         _rng.GetBytes(bytes);
-#else
-        RandomNumberGenerator.Fill(bytes);
-#endif
         return Base32.ToBase32(bytes);
+#else
+        return Base32.GenerateBase32();
+#endif
     }
 
     // IUserLoginStore methods
@@ -2497,19 +2567,20 @@ public class UserManager<TUser> : IDisposable where TUser : class
                 throw new InvalidOperationException(Resources.NullSecurityStamp);
             }
         }
-        var errors = new List<IdentityError>();
+        List<IdentityError>? errors = null;
         foreach (var v in UserValidators)
         {
             var result = await v.ValidateAsync(this, user).ConfigureAwait(false);
             if (!result.Succeeded)
             {
+                errors ??= new List<IdentityError>();
                 errors.AddRange(result.Errors);
             }
         }
-        if (errors.Count > 0)
+        if (errors?.Count > 0)
         {
             Logger.LogDebug(LoggerEventIds.UserValidationFailed, "User validation failed: {errors}.", string.Join(";", errors.Select(e => e.Code)));
-            return IdentityResult.Failed(errors.ToArray());
+            return IdentityResult.Failed(errors);
         }
         return IdentityResult.Success;
     }
@@ -2523,7 +2594,7 @@ public class UserManager<TUser> : IDisposable where TUser : class
     /// <returns>A <see cref="IdentityResult"/> representing whether validation was successful.</returns>
     protected async Task<IdentityResult> ValidatePasswordAsync(TUser user, string? password)
     {
-        var errors = new List<IdentityError>();
+        List<IdentityError>? errors = null;
         var isValid = true;
         foreach (var v in PasswordValidators)
         {
@@ -2532,6 +2603,7 @@ public class UserManager<TUser> : IDisposable where TUser : class
             {
                 if (result.Errors.Any())
                 {
+                    errors ??= new List<IdentityError>();
                     errors.AddRange(result.Errors);
                 }
 
@@ -2540,8 +2612,8 @@ public class UserManager<TUser> : IDisposable where TUser : class
         }
         if (!isValid)
         {
-            Logger.LogDebug(LoggerEventIds.PasswordValidationFailed, "User password validation failed: {errors}.", string.Join(";", errors.Select(e => e.Code)));
-            return IdentityResult.Failed(errors.ToArray());
+            Logger.LogDebug(LoggerEventIds.PasswordValidationFailed, "User password validation failed: {errors}.", string.Join(";", errors?.Select(e => e.Code) ?? Array.Empty<string>()));
+            return IdentityResult.Failed(errors);
         }
         return IdentityResult.Success;
     }

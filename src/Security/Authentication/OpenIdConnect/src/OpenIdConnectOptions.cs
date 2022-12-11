@@ -70,7 +70,7 @@ public class OpenIdConnectOptions : RemoteAuthenticationOptions
             Name = OpenIdConnectDefaults.CookieNoncePrefix,
             HttpOnly = true,
             SameSite = SameSiteMode.None,
-            SecurePolicy = CookieSecurePolicy.SameAsRequest,
+            SecurePolicy = CookieSecurePolicy.Always,
             IsEssential = true,
         };
     }
@@ -299,12 +299,12 @@ public class OpenIdConnectOptions : RemoteAuthenticationOptions
     /// <summary>
     /// Enables or disables the use of the Proof Key for Code Exchange (PKCE) standard.
     /// This only applies when the <see cref="ResponseType"/> is set to <see cref="OpenIdConnectResponseType.Code"/>.
-    /// See https://tools.ietf.org/html/rfc7636.
+    /// See <see href="https://tools.ietf.org/html/rfc7636"/>.
     /// The default value is `true`.
     /// </summary>
     public bool UsePkce { get; set; } = true;
 
-    private class OpenIdConnectNonceCookieBuilder : RequestPathBaseCookieBuilder
+    private sealed class OpenIdConnectNonceCookieBuilder : RequestPathBaseCookieBuilder
     {
         private readonly OpenIdConnectOptions _options;
 

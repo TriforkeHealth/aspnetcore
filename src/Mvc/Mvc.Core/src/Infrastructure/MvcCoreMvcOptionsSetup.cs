@@ -20,7 +20,7 @@ namespace Microsoft.AspNetCore.Mvc;
 /// <summary>
 /// Sets up default options for <see cref="MvcOptions"/>.
 /// </summary>
-internal class MvcCoreMvcOptionsSetup : IConfigureOptions<MvcOptions>, IPostConfigureOptions<MvcOptions>
+internal sealed class MvcCoreMvcOptionsSetup : IConfigureOptions<MvcOptions>, IPostConfigureOptions<MvcOptions>
 {
     private readonly IHttpRequestStreamReaderFactory _readerFactory;
     private readonly ILoggerFactory _loggerFactory;
@@ -63,6 +63,7 @@ internal class MvcCoreMvcOptionsSetup : IConfigureOptions<MvcOptions>, IPostConf
         options.ModelBinderProviders.Add(new FloatingPointTypeModelBinderProvider());
         options.ModelBinderProviders.Add(new EnumTypeModelBinderProvider(options));
         options.ModelBinderProviders.Add(new DateTimeModelBinderProvider());
+        options.ModelBinderProviders.Add(new TryParseModelBinderProvider());
         options.ModelBinderProviders.Add(new SimpleTypeModelBinderProvider());
         options.ModelBinderProviders.Add(new CancellationTokenModelBinderProvider());
         options.ModelBinderProviders.Add(new ByteArrayModelBinderProvider());

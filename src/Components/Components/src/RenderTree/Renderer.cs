@@ -29,7 +29,7 @@ public abstract partial class Renderer : IDisposable, IAsyncDisposable
     private readonly RenderBatchBuilder _batchBuilder = new RenderBatchBuilder();
     private readonly Dictionary<ulong, EventCallback> _eventBindings = new Dictionary<ulong, EventCallback>();
     private readonly Dictionary<ulong, ulong> _eventHandlerIdReplacements = new Dictionary<ulong, ulong>();
-    private readonly ILogger<Renderer> _logger;
+    private readonly ILogger _logger;
     private readonly ComponentFactory _componentFactory;
     private Dictionary<int, ParameterView>? _rootComponentsLatestParameters;
     private Task? _ongoingQuiescenceTask;
@@ -64,7 +64,7 @@ public abstract partial class Renderer : IDisposable, IAsyncDisposable
     /// <param name="serviceProvider">The <see cref="IServiceProvider"/> to be used when initializing components.</param>
     /// <param name="loggerFactory">The <see cref="ILoggerFactory"/>.</param>
     public Renderer(IServiceProvider serviceProvider, ILoggerFactory loggerFactory)
-        : this(serviceProvider, loggerFactory, GetComponentActivatorOrDefault(serviceProvider)!)
+        : this(serviceProvider, loggerFactory, GetComponentActivatorOrDefault(serviceProvider))
     {
         // This overload is provided for back-compatibility
     }
@@ -87,19 +87,25 @@ public abstract partial class Renderer : IDisposable, IAsyncDisposable
             throw new ArgumentNullException(nameof(loggerFactory));
         }
 
-        // Even though IComponentActivator is not marked as nullable, we do allow null because that's how the framework internally indicates
-        // that we should use default activation logic.
+        if (componentActivator is null)
+        {
+            throw new ArgumentNullException(nameof(componentActivator));
+        }
 
         _serviceProvider = serviceProvider;
-        _logger = loggerFactory.CreateLogger<Renderer>();
+        // Would normally use ILogger<T> here to get the benefit of the string name being cached but this is a public ctor that
+        // has always taken ILoggerFactory so to avoid the per-instance string allocation of the logger name we just pass the
+        // logger name in here as a string literal.
+        _logger = loggerFactory.CreateLogger("Microsoft.AspNetCore.Components.RenderTree.Renderer");
         _componentFactory = new ComponentFactory(componentActivator);
     }
 
     internal HotReloadManager HotReloadManager { get; set; } = HotReloadManager.Default;
 
-    private static IComponentActivator? GetComponentActivatorOrDefault(IServiceProvider serviceProvider)
+    private static IComponentActivator GetComponentActivatorOrDefault(IServiceProvider serviceProvider)
     {
-        return serviceProvider.GetService<IComponentActivator>();
+        return serviceProvider.GetService<IComponentActivator>()
+            ?? DefaultComponentActivator.Instance;
     }
 
     /// <summary>
